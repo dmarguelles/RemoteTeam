@@ -1,5 +1,5 @@
 import React from 'react';
-import { CalendarDays, Sparkles } from 'lucide-react';
+import { CalendarDays } from 'lucide-react';
 
 export const Header: React.FC = () => {
   return (
