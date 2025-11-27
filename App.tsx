@@ -28,14 +28,25 @@ const App: React.FC = () => {
     const schedulesRef = ref(db, 'schedules');
 
     const unsubscribe = onValue(schedulesRef, (snapshot) => {
-      const data = snapshot.val();
+      const raw = snapshot.val();
 
-      if (data) {
-        // En Firebase guardaremos directamente el array de EmployeeSchedule
-        setSchedules(data as EmployeeSchedule[]);
+      if (raw) {
+        // raw puede ser array u objeto; lo convertimos a array de forma segura
+        const list: any[] = Array.isArray(raw) ? raw : Object.values(raw);
+
+        const normalized: EmployeeSchedule[] = INITIAL_EMPLOYEES.map(emp => {
+          const found = list.find(s => s && s.employeeId === emp.id) || {};
+          return {
+            employeeId: emp.id,
+            days: found.days || {}, // garantizamos que siempre haya objeto
+          };
+        });
+
+        setSchedules(normalized);
+        // opcional: re-escribimos normalizado para limpiar la DB
+        set(schedulesRef, normalized);
       } else {
-        // Si no hay nada aún, inicializamos con empleados vacíos
-        const initial = INITIAL_EMPLOYEES.map(emp => ({
+        const initial: EmployeeSchedule[] = INITIAL_EMPLOYEES.map(emp => ({
           employeeId: emp.id,
           days: {},
         }));
@@ -53,7 +64,7 @@ const App: React.FC = () => {
   const getDayStatus = (empId: string, date: Date): WorkStatus => {
     const dateStr = format(date, 'yyyy-MM-dd');
     const schedule = schedules.find(s => s.employeeId === empId);
-    return schedule?.days[dateStr]?.status || 'OFFICE';
+    return schedule?.days?.[dateStr]?.status || 'OFFICE';
   };
 
   const updateStatus = (empId: string, date: Date, status: WorkStatus) => {
@@ -216,7 +227,7 @@ const App: React.FC = () => {
       const schedule = schedules.find(s => s.employeeId === emp.id);
       const daysSummary = shareDates.map(day => {
         const dateStr = format(day, 'yyyy-MM-dd');
-        const status = schedule?.days[dateStr]?.status || 'OFFICE';
+        const status = schedule?.days?.[dateStr]?.status || 'OFFICE';
         const dayName = viewMode === 'week' ? format(day, 'EEE') : format(day, 'MM/dd');
         const emoji = status === 'WFH' ? '🏠' : status === 'VACATION' ? '🏝️' : status === 'SICK' ? '🤒' : status === 'EVENT' ? '🎪' : status === 'MEETING' ? '🤝' : '🏢';
         return `${dayName}: ${emoji}`;
@@ -303,7 +314,7 @@ const App: React.FC = () => {
     const total = INITIAL_EMPLOYEES.length;
     const count = INITIAL_EMPLOYEES.filter(emp => {
       const schedule = schedules.find(s => s.employeeId === emp.id);
-      const status = schedule?.days[dateStr]?.status || 'OFFICE';
+      const status = schedule?.days?.[dateStr]?.status || 'OFFICE';
       return status === 'OFFICE';
     }).length;
     return { count, total, percentage: Math.round((count / total) * 100) };
