@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { startOfWeek, startOfMonth, endOfMonth, addDays, format, isSameDay, addWeeks, subWeeks, addMonths, subMonths, getDay, isWeekend, getWeek } from 'date-fns';
+import React, { useState, useEffect, useMemo } from 'react';
+import { startOfWeek, startOfMonth, endOfMonth, addDays, format, addWeeks, subWeeks, addMonths, subMonths, getDay, isWeekend, getWeek } from 'date-fns';
 import { ChevronLeft, ChevronRight, Wand2, RefreshCw, AlertCircle, Calendar as CalendarIcon, Loader2, Sparkles, Share2, Check, Users, CalendarRange, CalendarDays, BarChart3 } from 'lucide-react';
 import { Header } from './components/Header';
 import { StatusSelector } from './components/StatusSelector';
 import { StatisticsModal } from './components/StatisticsModal';
 import { INITIAL_EMPLOYEES, STATUS_CONFIG, WEEK_DAYS } from './constants';
-import { Employee, EmployeeSchedule, WorkStatus, DaySchedule } from './types';
+import { EmployeeSchedule, WorkStatus } from './types';
 import { generateSmartSchedule } from './services/geminiService';
 import { db } from './firebase';
 import { ref, onValue, set } from 'firebase/database';
