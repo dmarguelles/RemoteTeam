@@ -7,8 +7,8 @@ import { StatisticsModal } from './components/StatisticsModal';
 import { INITIAL_EMPLOYEES, STATUS_CONFIG, WEEK_DAYS } from './constants';
 import { Employee, EmployeeSchedule, WorkStatus, DaySchedule } from './types';
 import { generateSmartSchedule } from './services/geminiService';
-
-const STORAGE_KEY = 'flexteam-schedules';
+import { db } from './firebase';
+import { ref, onValue, set } from 'firebase/database';
 
 type ViewMode = 'week' | 'month';
 
@@ -25,31 +25,30 @@ const App: React.FC = () => {
 
   // Load schedules from localStorage on mount
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as EmployeeSchedule[];
-        // Ensure all employees have a schedule entry
-        const merged = INITIAL_EMPLOYEES.map(emp => {
-          const existing = parsed.find(s => s.employeeId === emp.id);
-          return existing || { employeeId: emp.id, days: {} };
-        });
-        setSchedules(merged);
-      } catch {
-        // If parsing fails, initialize fresh
-        setSchedules(INITIAL_EMPLOYEES.map(emp => ({ employeeId: emp.id, days: {} })));
-      }
-    } else {
-      setSchedules(INITIAL_EMPLOYEES.map(emp => ({ employeeId: emp.id, days: {} })));
-    }
-  }, []);
+    const schedulesRef = ref(db, 'schedules');
 
-  // Auto-save schedules to localStorage whenever they change
-  useEffect(() => {
-    if (schedules.length > 0) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(schedules));
-    }
-  }, [schedules]);
+    const unsubscribe = onValue(schedulesRef, (snapshot) => {
+      const data = snapshot.val();
+
+      if (data) {
+        // En Firebase guardaremos directamente el array de EmployeeSchedule
+        setSchedules(data as EmployeeSchedule[]);
+      } else {
+        // Si no hay nada aún, inicializamos con empleados vacíos
+        const initial = INITIAL_EMPLOYEES.map(emp => ({
+          employeeId: emp.id,
+          days: {},
+        }));
+        setSchedules(initial);
+        set(schedulesRef, initial);
+      }
+    });
+
+    // Cleanup
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const getDayStatus = (empId: string, date: Date): WorkStatus => {
     const dateStr = format(date, 'yyyy-MM-dd');
@@ -59,16 +58,26 @@ const App: React.FC = () => {
 
   const updateStatus = (empId: string, date: Date, status: WorkStatus) => {
     const dateStr = format(date, 'yyyy-MM-dd');
-    setSchedules(prev => prev.map(sch => {
-      if (sch.employeeId !== empId) return sch;
-      return {
-        ...sch,
-        days: {
-          ...sch.days,
-          [dateStr]: { date: dateStr, status }
-        }
-      };
-    }));
+
+    setSchedules(prev => {
+      const updated = prev.map(sch => {
+        if (sch.employeeId !== empId) return sch;
+        return {
+          ...sch,
+          days: {
+            ...sch.days,
+            [dateStr]: { date: dateStr, status },
+          },
+        };
+      });
+
+      // Escribimos en Firebase
+      const schedulesRef = ref(db, 'schedules');
+      set(schedulesRef, updated);
+
+      return updated;
+    });
+
     setActiveSelector(null);
   };
 
@@ -87,59 +96,88 @@ const App: React.FC = () => {
     setActiveSelector({ empId, dateStr });
   };
 
+  // Generar planning con IA y guardar en Firebase
   const handleGenerateSchedule = async () => {
     setLoadingAi(true);
     setErrorMsg(null);
+
     try {
       const weekStartStr = format(currentWeekStart, 'yyyy-MM-dd');
       const result = await generateSmartSchedule(INITIAL_EMPLOYEES, weekStartStr);
-      
-      const newSchedules = [...schedules];
-      
-      // Apply the AI generated schedule
-      result.schedules.forEach((aiSch: any) => {
-        const emp = INITIAL_EMPLOYEES.find(e => e.name === aiSch.employeeName);
-        if (!emp) return;
 
-        const scheduleIdx = newSchedules.findIndex(s => s.employeeId === emp.id);
-        if (scheduleIdx === -1) return;
+      // Usamos el callback de setSchedules para construir `updated`
+      setSchedules(prev => {
+        const updated = [...prev];
 
-        aiSch.schedule.forEach((daySch: any) => {
-          // Map "Monday" back to actual date
-          const dayIndex = WEEK_DAYS.indexOf(daySch.day);
-          if (dayIndex !== -1) {
+        result.schedules.forEach((aiSch: any) => {
+          const emp = INITIAL_EMPLOYEES.find(e => e.name === aiSch.employeeName);
+          if (!emp) return;
+
+          const scheduleIdx = updated.findIndex(s => s.employeeId === emp.id);
+          if (scheduleIdx === -1) return;
+
+          aiSch.schedule.forEach((daySch: any) => {
+            const dayIndex = WEEK_DAYS.indexOf(daySch.day);
+            if (dayIndex === -1) return;
+
             const actualDate = addDays(currentWeekStart, dayIndex);
             const dateStr = format(actualDate, 'yyyy-MM-dd');
-            
-            newSchedules[scheduleIdx].days[dateStr] = {
-              date: dateStr,
-              status: daySch.status as WorkStatus
-            };
-          }
-        });
-      });
 
-      setSchedules(newSchedules);
+            // Aseguramos el objeto days
+            if (!updated[scheduleIdx].days) {
+              updated[scheduleIdx].days = {};
+            }
+
+            updated[scheduleIdx].days[dateStr] = {
+              date: dateStr,
+              status: daySch.status as WorkStatus,
+            };
+          });
+        });
+
+        // 🔁 Persistimos el resultado en Firebase
+        const schedulesRef = ref(db, 'schedules');
+        set(schedulesRef, updated);
+
+        return updated;
+      });
     } catch (err) {
-      setErrorMsg("Failed to generate schedule. Check API Key or try again.");
+      setErrorMsg('Failed to generate schedule. Check API Key or try again.');
     } finally {
       setLoadingAi(false);
     }
   };
 
+
+  // Limpiar semana o mes y guardar en Firebase
   const clearPeriod = () => {
     const periodLabel = viewMode === 'week' ? 'week' : 'month';
-    if(!window.confirm(`Clear all entries for this ${periodLabel}?`)) return;
-    
-    const datesToClear = viewMode === 'week'
-      ? Array.from({ length: 5 }).map((_, i) => format(addDays(currentWeekStart, i), 'yyyy-MM-dd'))
-      : getMonthWorkdays(currentMonth).map(d => format(d, 'yyyy-MM-dd'));
-    
-    setSchedules(prev => prev.map(sch => {
-      const newDays = { ...sch.days };
-      datesToClear.forEach(d => delete newDays[d]);
-      return { ...sch, days: newDays };
-    }));
+    if (!window.confirm(`Clear all entries for this ${periodLabel}?`)) return;
+
+    const datesToClear =
+      viewMode === 'week'
+        ? Array.from({ length: 5 }).map((_, i) =>
+            format(addDays(currentWeekStart, i), 'yyyy-MM-dd'),
+          )
+        : getMonthWorkdays(currentMonth).map(d =>
+            format(d, 'yyyy-MM-dd'),
+          );
+
+    setSchedules(prev => {
+      const updated = prev.map(sch => {
+        const newDays = { ...sch.days };
+        datesToClear.forEach(d => {
+          delete newDays[d];
+        });
+        return { ...sch, days: newDays };
+      });
+
+      // 🔁 Persistimos el resultado en Firebase
+      const schedulesRef = ref(db, 'schedules');
+      set(schedulesRef, updated);
+
+      return updated;
+    });
   };
 
   // Get all workdays (Mon-Fri) for a given month
