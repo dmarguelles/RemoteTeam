@@ -166,7 +166,7 @@ jobs:
           npm audit --json > audit-report.json || true
 
       - name: Upload audit report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: mobile-security-audit
           path: frontend/mobile/audit-report.json
