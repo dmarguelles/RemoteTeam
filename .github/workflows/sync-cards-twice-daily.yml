@@ -1,0 +1,98 @@
+name: Twice Daily Cards Sync
+
+# Ejecuta automáticamente 2 veces al día: 3:00 AM y 3:00 PM UTC
+# También se puede disparar manualmente desde GitHub Actions UI
+
+on:
+  schedule:
+    # Cron: "Minuto Hora Día Mes Día-de-semana"
+    # "0 3,15 * * *" = Cada día a las 3:00 AM y 3:00 PM UTC
+    - cron: '0 3,15 * * *'
+  
+  # Permite ejecución manual
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force complete rebuild (even if no new cards)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  sync-cards:
+    name: Sync Cards from Riot API
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install Chrome (for Selenium)
+        uses: browser-actions/setup-chrome@v1
+      
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install apscheduler  # Para scheduler si se usa
+      
+      - name: Check for new cards
+        id: check
+        run: |
+          cd backend
+          python scripts/check_new_cards.py --json > check_result.json
+          cat check_result.json
+          NEW_CARDS=$(jq -r '.new_cards' check_result.json)
+          NEEDS_UPDATE=$(jq -r '.needs_update' check_result.json)
+          echo "new_cards=$NEW_CARDS" >> $GITHUB_OUTPUT
+          echo "needs_update=$NEEDS_UPDATE" >> $GITHUB_OUTPUT
+      
+      - name: Run sync pipeline
+        if: steps.check.outputs.needs_update == 'true' || inputs.force_rebuild
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGODB_DB_NAME: ${{ secrets.MONGODB_DB_NAME }}
+        run: |
+          cd backend
+          if [ "${{ inputs.force_rebuild }}" == "true" ]; then
+            python scripts/sync_cards_pipeline.py --force-rebuild
+          else
+            python scripts/sync_cards_pipeline.py
+          fi
+      
+      - name: Commit updated files
+        if: steps.check.outputs.needs_update == 'true' || inputs.force_rebuild
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add backend/data/card_index.faiss
+          git add backend/data/card_mapping.json
+          git add backend/data/card_images/*.png || true
+          git commit -m "chore: sync cards - added ${{ steps.check.outputs.new_cards }} new cards [skip ci]" || echo "No changes to commit"
+          git push
+      
+      - name: Create notification issue
+        if: steps.check.outputs.needs_update == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🆕 ${process.env.NEW_CARDS} new cards synced from Riot API`,
+              body: `**Automatic Card Sync Report**\n\nThe twice-daily sync job has detected and imported **${process.env.NEW_CARDS}** new cards from the Riot API.\n\n**Actions taken:**\n- ✅ Cards imported to MongoDB\n- ✅ Images downloaded\n- ✅ FAISS index rebuilt\n\n**Next steps:**\n- Review the new cards in the admin panel\n- Verify images are displaying correctly\n- Update card metadata if needed\n\n---\n*This issue was automatically created by the twice-daily sync workflow (runs at 03:00 and 15:00 UTC).*`,
+              labels: ['automated', 'cards-sync', 'data-update']
+            })
+        env:
+          NEW_CARDS: ${{ steps.check.outputs.new_cards }}
+      
+      - name: Notify success
+        if: steps.check.outputs.needs_update == 'false' && !inputs.force_rebuild
+        run: |
+          echo "✅ No new cards detected. Database is up to date!"

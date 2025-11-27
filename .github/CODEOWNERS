@@ -1,0 +1,42 @@
+# CODEOWNERS - Auto-assign reviewers for PRs
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# ==============================================================================
+# Global Owner (default para todo)
+# ==============================================================================
+* @dmarguelles
+
+# ==============================================================================
+# Domain Layer (critical, requiere review cuidadoso)
+# ==============================================================================
+/src/domain/ @dmarguelles
+
+# ==============================================================================
+# Infrastructure (adapters, external integrations)
+# ==============================================================================
+/src/infrastructure/adapters/ @dmarguelles
+/src/infrastructure/telemetry/ @dmarguelles
+
+# ==============================================================================
+# Tests (pueden revisarse con más flexibilidad)
+# ==============================================================================
+/tests/ @dmarguelles
+
+# ==============================================================================
+# CI/CD & Workflows (crítico para estabilidad)
+# ==============================================================================
+/.github/workflows/ @dmarguelles
+/.github/dependabot.yml @dmarguelles
+
+# ==============================================================================
+# Documentation (puede recibir contribuciones community)
+# ==============================================================================
+/docs/ @dmarguelles
+README.md @dmarguelles
+
+# ==============================================================================
+# Configuration files (crítico)
+# ==============================================================================
+pyproject.toml @dmarguelles
+.pre-commit-config.yaml @dmarguelles
+ruff.toml @dmarguelles

@@ -1,0 +1,52 @@
+version: 2
+
+updates:
+  # ============================================================================
+  # GitHub Actions workflows updates
+  # ============================================================================
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  # ============================================================================
+  # Python dependencies updates
+  # ============================================================================
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "10:00"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      # Agrupar updates de testing
+      testing:
+        patterns:
+          - "pytest*"
+          - "coverage*"
+      # Agrupar updates de linting/typing
+      linting:
+        patterns:
+          - "ruff*"
+          - "mypy*"
+      # Agrupar updates de LangGraph/LangChain
+      langgraph:
+        patterns:
+          - "langgraph*"
+          - "langchain*"
