@@ -95,7 +95,7 @@ jobs:
 
       - name: Archive coverage report
         if: matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: coverage-report
           path: |
@@ -164,7 +164,7 @@ jobs:
         run: bandit -r src -f json -o bandit-report.json || true
 
       - name: Upload security reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: security-reports
           path: |
